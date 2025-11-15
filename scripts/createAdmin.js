@@ -1,0 +1,51 @@
+import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
+import User from '../models/userModel.js';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const createAdmin = async () => {
+  try {
+    console.log('🔄 Connecting to database...');
+    await mongoose.connect(process.env.MONGO_URI);
+    console.log('✅ Connected to database');
+    
+    // Check if admin already exists
+    const existingAdmin = await User.findOne({ email: 'admin@delaurel.com' });
+    if (existingAdmin) {
+      console.log('⚠️  Admin already exists');
+      console.log('Email:', existingAdmin.email);
+      console.log('You can login with: admin@delaurel.com / admin123');
+      process.exit(0);
+    }
+    
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash('admin123', salt);
+    
+    const admin = await User.create({
+      name: 'System Administrator',
+      email: 'admin@delaurel.com',
+      password: hashedPassword,
+      role: 'admin'
+    });
+    
+    console.log('');
+    console.log('✅ Admin created successfully!');
+    console.log('=====================================');
+    console.log('Email:    admin@delaurel.com');
+    console.log('Password: admin123');
+    console.log('Role:     admin');
+    console.log('=====================================');
+    console.log('');
+    console.log('🚀 You can now login at http://localhost:3000');
+    console.log('');
+    
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error:', error.message);
+    process.exit(1);
+  }
+};
+
+createAdmin();

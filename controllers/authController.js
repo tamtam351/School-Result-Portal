@@ -1,4 +1,4 @@
-// controllers/authController.js - WITH ROLE-BASED TOKEN EXPIRATION
+// controllers/authController.js - WITH DEBUG LOGGING
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/userModel.js';
@@ -95,24 +95,40 @@ export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    console.log('🔐 Login attempt:', { email, password });
+
     // Check if user exists
     const user = await User.findOne({ email });
     if (!user) {
+      console.log('❌ User not found');
       return res.status(404).json({ message: "User not found" });
     }
 
+    console.log('✅ User found:', user.email);
+    console.log('🔑 Stored password hash:', user.password.substring(0, 30) + '...');
+
     // Check if user is banned
     if (user.isBanned) {
+      console.log('❌ User is banned');
       return res.status(403).json({ 
         message: "Your account has been banned. Please contact administration." 
       });
     }
 
     // Compare passwords
+    console.log('🔍 Comparing passwords...');
+    console.log('🔍 Entered password:', password);
+    console.log('🔍 Has matchPassword method:', typeof user.matchPassword);
+    
     const isMatch = await user.matchPassword(password);
+    console.log('🔍 Password match result:', isMatch);
+    
     if (!isMatch) {
+      console.log('❌ Password does not match');
       return res.status(401).json({ message: "Invalid email or password" });
     }
+
+    console.log('✅ Login successful!');
 
     // Create JWT token with role-based expiration
     const tokenExpiration = getTokenExpiration(user.role);
@@ -145,7 +161,7 @@ export const loginUser = async (req, res) => {
     res.status(200).json({
       message: "Login successful",
       token,
-      tokenExpiration, // So frontend knows when to refresh
+      tokenExpiration,
       role: user.role,
       name: user.name,
       email: user.email,
@@ -153,7 +169,7 @@ export const loginUser = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Login error:", error);
+    console.error("❌ Login error:", error);
     res.status(500).json({ 
       message: "Server error during login", 
       error: error.message 

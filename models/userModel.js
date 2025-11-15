@@ -1,4 +1,4 @@
-// models/userModel.js - COMPLETE VERSION
+// models/userModel.js - FIXED VERSION
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 
@@ -107,10 +107,9 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// ========== PRE-SAVE HOOKS ==========
-
-// Handle role-specific fields
-userSchema.pre("save", function (next) {
+// ========== COMBINED PRE-SAVE HOOK ==========
+userSchema.pre("save", async function (next) {
+  // 1. Handle role-specific fields
   if (this.role === "student") {
     if (!this.studentId) {
       const year = new Date().getFullYear();
@@ -126,7 +125,6 @@ userSchema.pre("save", function (next) {
       }
     }
   } else {
-    // Non-students should NOT have student-specific fields
     this.branch = undefined;
     this.classLevel = undefined;
     this.studentId = undefined;
@@ -134,39 +132,30 @@ userSchema.pre("save", function (next) {
     this.branchSelectedAt = undefined;
   }
   
-  // Teachers should not have student fields
   if (this.role === "teacher") {
     this.assignedSubjects = undefined;
   }
   
-  // Parents should not have assignedSubjects
   if (this.role === "parent") {
     this.assignedSubjects = undefined;
   }
   
-  // Non-teachers should not have teacher fields
   if (this.role !== "teacher") {
     this.teacherSpecialization = undefined;
     this.qualifications = undefined;
     this.yearsOfExperience = undefined;
   }
   
-  next();
-});
-
-// Hash password before saving
-userSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) {
-    return next();
+  // 2. Hash password ONLY if modified
+  if (this.isModified("password")) {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
   }
   
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
   next();
 });
 
 // ========== INSTANCE METHODS ==========
-
 userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };

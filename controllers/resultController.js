@@ -1,96 +1,106 @@
-// controllers/resultController.js - ENHANCED VERSION
+// controllers/resultController.js
+// ------------------------------------------------------------
+// Imports
+// ------------------------------------------------------------
 import Result from "../models/resultModel.js";
 import User from "../models/userModel.js";
 import Subject from "../models/subjectModel.js";
 
-// Teacher uploads result
+
+// ============================================================
+// 1. UPLOAD OR UPDATE RESULT (Teacher)
+// ============================================================
 export const uploadResult = async (req, res) => {
   try {
     const { 
-      studentId, 
-      subjectId, 
-      firstCA,
-      secondCA,
-      exam,
-      term, 
-      session,
-      teacherComment 
+      studentId, subjectId, firstCA, secondCA,
+      exam, term, session, teacherComment 
     } = req.body;
-    
+
     const teacherId = req.user._id;
-    
-    // Validation
+
+    // ------------------------------
+    // Validate student
+    // ------------------------------
     const student = await User.findById(studentId).populate("assignedSubjects");
     if (!student || student.role !== "student") {
       return res.status(404).json({ message: "Student not found" });
     }
-    
+
+    // ------------------------------
+    // Validate subject
+    // ------------------------------
     const subject = await Subject.findById(subjectId);
     if (!subject) {
       return res.status(404).json({ message: "Subject not found" });
     }
-    
+
+    // ------------------------------
     // Check teacher assignment
-    if (!subject.teachers.some(t => t.toString() === teacherId.toString())) {
+    // ------------------------------
+    const isTeacherForSubject = subject.teachers.some(
+      t => t.toString() === teacherId.toString()
+    );
+    if (!isTeacherForSubject) {
       return res.status(403).json({ 
         message: `You are not assigned to teach ${subject.name}` 
       });
     }
-    
-    // Check if student takes this subject
+
+    // ------------------------------
+    // Check if student takes the subject
+    // ------------------------------
     const studentHasSubject = student.assignedSubjects.some(
       s => s._id.toString() === subjectId.toString()
     );
-    
     if (!studentHasSubject) {
       return res.status(400).json({ 
         message: `${student.name} does not take ${subject.name}` 
       });
     }
-    
-    // Validate score ranges
-    if (firstCA < 0 || firstCA > 20) {
-      return res.status(400).json({ 
-        message: "First CA must be between 0-20 marks" 
-      });
-    }
-    if (secondCA < 0 || secondCA > 10) {
-      return res.status(400).json({ 
-        message: "Second CA must be between 0-10 marks" 
-      });
-    }
-    if (exam < 0 || exam > 70) {
-      return res.status(400).json({ 
-        message: "Exam must be between 0-70 marks" 
-      });
-    }
-    
-    // Check if result exists
+
+    // ------------------------------
+    // Validate scores
+    // ------------------------------
+    if (firstCA < 0 || firstCA > 20)
+      return res.status(400).json({ message: "First CA must be between 0–20" });
+
+    if (secondCA < 0 || secondCA > 10)
+      return res.status(400).json({ message: "Second CA must be between 0–10" });
+
+    if (exam < 0 || exam > 70)
+      return res.status(400).json({ message: "Exam must be between 0–70" });
+
+    // ------------------------------
+    // CHECK IF RESULT EXISTS
+    // ------------------------------
     let result = await Result.findOne({
       student: studentId,
       subject: subjectId,
       term,
       session
     });
-    
+
+    // ========================================================
+    // UPDATE EXISTING RESULT
+    // ========================================================
     if (result) {
-      // Update existing result
       result.firstCA = firstCA;
       result.secondCA = secondCA;
       result.exam = exam;
       result.teacherComment = teacherComment || result.teacherComment;
       result.lastEditedBy = teacherId;
       result.lastEditedAt = new Date();
-      
+
       await result.save();
-      
+
       await result.populate([
         { path: "student", select: "name studentId classLevel branch" },
         { path: "subject", select: "name code" },
         { path: "uploadedBy", select: "name email" },
         { path: "lastEditedBy", select: "name email" }
       ]);
-      
+
       return res.json({
         success: true,
         message: "Result updated successfully",
@@ -99,9 +109,9 @@ export const uploadResult = async (req, res) => {
           student: result.student,
           subject: result.subject,
           scores: {
-            firstCA: result.firstCA,
-            secondCA: result.secondCA,
-            exam: result.exam,
+            firstCA,
+            secondCA,
+            exam,
             total: result.total
           },
           grade: result.grade,
@@ -115,8 +125,10 @@ export const uploadResult = async (req, res) => {
         }
       });
     }
-    
-    // Create new result
+
+    // ========================================================
+    // CREATE NEW RESULT
+    // ========================================================
     result = await Result.create({
       student: studentId,
       subject: subjectId,
@@ -128,14 +140,14 @@ export const uploadResult = async (req, res) => {
       teacherComment,
       uploadedBy: teacherId
     });
-    
+
     await result.populate([
       { path: "student", select: "name studentId classLevel branch" },
       { path: "subject", select: "name code" },
       { path: "uploadedBy", select: "name email" }
     ]);
-    
-    res.status(201).json({
+
+    return res.status(201).json({
       success: true,
       message: "Result uploaded successfully",
       result: {
@@ -143,66 +155,68 @@ export const uploadResult = async (req, res) => {
         student: result.student,
         subject: result.subject,
         scores: {
-          firstCA: result.firstCA,
-          secondCA: result.secondCA,
-          exam: result.exam,
+          firstCA,
+          secondCA,
+          exam,
           total: result.total
         },
         grade: result.grade,
         remark: result.remark,
         teacherComment: result.teacherComment,
-        term: result.term,
-        session: result.session,
+        term,
+        session,
         uploadedBy: result.uploadedBy
       }
     });
-    
+
   } catch (error) {
     console.error("Upload result error:", error);
-    
+
     if (error.code === 11000) {
-      return res.status(400).json({ 
-        message: "Result already exists for this student/subject/term/session" 
+      return res.status(400).json({
+        message: "Result already exists for this student, subject, term, and session"
       });
     }
-    
-    res.status(500).json({ 
-      message: "Error uploading result", 
-      error: error.message 
+
+    res.status(500).json({
+      message: "Error uploading result",
+      error: error.message
     });
   }
 };
 
-// Get students for teacher's subject
+
+// ============================================================
+// 2. GET STUDENTS FOR A TEACHER'S SUBJECT
+// ============================================================
 export const getMyStudents = async (req, res) => {
   try {
     const { subjectId, term, session } = req.query;
     const teacherId = req.user._id;
-    
-    if (!subjectId) {
+
+    if (!subjectId)
       return res.status(400).json({ message: "subjectId is required" });
-    }
-    
+
     const subject = await Subject.findById(subjectId);
-    if (!subject) {
+    if (!subject)
       return res.status(404).json({ message: "Subject not found" });
-    }
-    
-    if (!subject.teachers.some(t => t.toString() === teacherId.toString())) {
-      return res.status(403).json({ 
-        message: "You are not assigned to teach this subject" 
-      });
-    }
-    
+
+    const isTeacherAssigned = subject.teachers.some(
+      t => t.toString() === teacherId.toString()
+    );
+    if (!isTeacherAssigned)
+      return res.status(403).json({ message: "You are not assigned to teach this subject" });
+
     const students = await User.find({
       role: "student",
       assignedSubjects: subjectId
     })
-    .select("name studentId classLevel branch email")
-    .sort({ classLevel: 1, name: 1 });
-    
+      .select("name studentId classLevel branch email")
+      .sort({ classLevel: 1, name: 1 });
+
     let studentsWithResults = students;
-    
+
+    // If term & session are supplied, attach results
     if (term && session) {
       const existingResults = await Result.find({
         subject: subjectId,
@@ -210,12 +224,12 @@ export const getMyStudents = async (req, res) => {
         session,
         student: { $in: students.map(s => s._id) }
       });
-      
+
       studentsWithResults = students.map(student => {
         const result = existingResults.find(
           r => r.student.toString() === student._id.toString()
         );
-        
+
         return {
           _id: student._id,
           name: student.name,
@@ -224,22 +238,24 @@ export const getMyStudents = async (req, res) => {
           branch: student.branch,
           email: student.email,
           hasResult: !!result,
-          result: result ? {
-            _id: result._id,
-            firstCA: result.firstCA,
-            secondCA: result.secondCA,
-            exam: result.exam,
-            total: result.total,
-            grade: result.grade,
-            remark: result.remark,
-            teacherComment: result.teacherComment,
-            uploadedAt: result.createdAt
-          } : null
+          result: result
+            ? {
+                _id: result._id,
+                firstCA: result.firstCA,
+                secondCA: result.secondCA,
+                exam: result.exam,
+                total: result.total,
+                grade: result.grade,
+                remark: result.remark,
+                teacherComment: result.teacherComment,
+                uploadedAt: result.createdAt
+              }
+            : null
         };
       });
     }
-    
-    res.json({
+
+    return res.json({
       success: true,
       subject: {
         _id: subject._id,
@@ -252,27 +268,30 @@ export const getMyStudents = async (req, res) => {
       studentsWithResults: studentsWithResults.filter(s => s.hasResult).length,
       students: studentsWithResults
     });
-    
+
   } catch (error) {
     console.error("Get students error:", error);
-    res.status(500).json({ 
-      message: "Error fetching students", 
-      error: error.message 
+    res.status(500).json({
+      message: "Error fetching students",
+      error: error.message
     });
   }
 };
 
-// Get all results for a student
+
+// ============================================================
+// 3. GET ALL RESULTS FOR A STUDENT
+// ============================================================
 export const getStudentResults = async (req, res) => {
   try {
     const { studentId, term, session } = req.query;
-    
+
     // Authorization
-    if (req.user.role === "student") {
-      if (req.user._id.toString() !== studentId) {
-        return res.status(403).json({ message: "Not authorized" });
-      }
-    } else if (req.user.role === "parent") {
+    if (req.user.role === "student" && req.user._id.toString() !== studentId) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    if (req.user.role === "parent") {
       const parent = await User.findById(req.user._id);
       if (!parent.children.includes(studentId)) {
         return res.status(403).json({ 
@@ -280,26 +299,24 @@ export const getStudentResults = async (req, res) => {
         });
       }
     }
-    
+
     const query = { student: studentId };
     if (term) query.term = term;
     if (session) query.session = session;
-    
+
     const results = await Result.find(query)
       .populate("subject", "name code")
       .populate("uploadedBy", "name")
       .sort({ "subject.name": 1 });
-    
+
     if (results.length === 0) {
-      return res.status(404).json({ 
-        message: "No results found for this student" 
-      });
+      return res.status(404).json({ message: "No results found for this student" });
     }
-    
+
     const totalScore = results.reduce((sum, r) => sum + r.total, 0);
     const averageScore = (totalScore / results.length).toFixed(2);
-    
-    res.json({
+
+    return res.json({
       success: true,
       student: results[0].student,
       term,
@@ -325,56 +342,58 @@ export const getStudentResults = async (req, res) => {
         uploadedBy: r.uploadedBy
       }))
     });
-    
+
   } catch (error) {
-    res.status(500).json({ 
-      message: "Error fetching results", 
-      error: error.message 
+    res.status(500).json({
+      message: "Error fetching results",
+      error: error.message
     });
   }
 };
 
-// Get all results by class and subject (for analytics)
+
+// ============================================================
+// 4. GET RESULTS BY CLASS & SUBJECT (Analytics)
+// ============================================================
 export const getResultsByClassAndSubject = async (req, res) => {
   try {
     const { classLevel, subjectId, term, session } = req.query;
-    
+
     if (!classLevel || !subjectId || !term || !session) {
-      return res.status(400).json({ 
-        message: "classLevel, subjectId, term, and session are required" 
+      return res.status(400).json({
+        message: "classLevel, subjectId, term, and session are required"
       });
     }
-    
-    // Get all students in class
+
     const students = await User.find({
       role: "student",
       classLevel,
       assignedSubjects: subjectId
     }).select("name studentId");
-    
+
     const studentIds = students.map(s => s._id);
-    
-    // Get results
+
     const results = await Result.find({
       student: { $in: studentIds },
       subject: subjectId,
       term,
       session
     })
-    .populate("student", "name studentId")
-    .sort({ total: -1 });
-    
-    // Calculate statistics
+      .populate("student", "name studentId")
+      .sort({ total: -1 });
+
     const totalStudents = students.length;
     const studentsWithResults = results.length;
+
     const scores = results.map(r => r.total);
-    const averageScore = scores.length > 0 
+
+    const averageScore = scores.length
       ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2)
       : 0;
-    const highestScore = scores.length > 0 ? Math.max(...scores) : 0;
-    const lowestScore = scores.length > 0 ? Math.min(...scores) : 0;
-    
-    // Grade distribution
+
+    const highestScore = scores.length ? Math.max(...scores) : 0;
+    const lowestScore = scores.length ? Math.min(...scores) : 0;
+
     const gradeDistribution = {
       A: results.filter(r => r.grade === "A").length,
       B: results.filter(r => r.grade === "B").length,
@@ -383,7 +402,7 @@ export const getResultsByClassAndSubject = async (req, res) => {
       E: results.filter(r => r.grade === "E").length,
       F: results.filter(r => r.grade === "F").length
     };
-    
+
     res.json({
       success: true,
       classLevel,
@@ -410,105 +429,109 @@ export const getResultsByClassAndSubject = async (req, res) => {
         remark: r.remark
       }))
     });
-    
+
   } catch (error) {
-    res.status(500).json({ 
-      message: "Error fetching class results", 
-      error: error.message 
+    res.status(500).json({
+      message: "Error fetching class results",
+      error: error.message
     });
   }
 };
 
-// Delete a result
+
+// ============================================================
+// 5. DELETE A RESULT
+// ============================================================
 export const deleteResult = async (req, res) => {
   try {
     const { resultId } = req.params;
-    
+
     const result = await Result.findById(resultId);
-    if (!result) {
+    if (!result)
       return res.status(404).json({ message: "Result not found" });
-    }
-    
-    // Teachers can only delete their own uploads
+
     if (req.user.role === "teacher") {
       if (result.uploadedBy.toString() !== req.user._id.toString()) {
-        return res.status(403).json({ 
-          message: "You can only delete results you uploaded" 
+        return res.status(403).json({
+          message: "You can only delete results you uploaded"
         });
       }
     }
-    
+
     await result.deleteOne();
-    
+
     res.json({
       success: true,
       message: "Result deleted successfully"
     });
-    
+
   } catch (error) {
-    res.status(500).json({ 
-      message: "Error deleting result", 
-      error: error.message 
+    res.status(500).json({
+      message: "Error deleting result",
+      error: error.message
     });
   }
 };
 
-// Bulk upload results (CSV/Excel import support)
+
+// ============================================================
+// 6. BULK UPLOAD RESULTS (CSV / EXCEL)
+// ============================================================
 export const bulkUploadResults = async (req, res) => {
   try {
     const { results, term, session, subjectId } = req.body;
     const teacherId = req.user._id;
-    
+
     if (!Array.isArray(results) || results.length === 0) {
-      return res.status(400).json({ 
-        message: "results array is required and cannot be empty" 
+      return res.status(400).json({
+        message: "results array is required and cannot be empty"
       });
     }
-    
-    // Verify teacher teaches this subject
+
     const subject = await Subject.findById(subjectId);
-    if (!subject) {
+    if (!subject)
       return res.status(404).json({ message: "Subject not found" });
-    }
-    
-    if (!subject.teachers.some(t => t.toString() === teacherId.toString())) {
-      return res.status(403).json({ 
-        message: "You are not assigned to teach this subject" 
+
+    const isTeacherAssigned = subject.teachers.some(
+      t => t.toString() === teacherId.toString()
+    );
+
+    if (!isTeacherAssigned)
+      return res.status(403).json({
+        message: "You are not assigned to teach this subject"
       });
-    }
-    
+
     const uploadedResults = [];
     const errors = [];
-    
+
     for (const item of results) {
       try {
         const { studentId, firstCA, secondCA, exam, teacherComment } = item;
-        
+
         // Validate student
-        const student = await User.findOne({ 
-          studentId, 
+        const student = await User.findOne({
+          studentId,
           role: "student",
           assignedSubjects: subjectId
         });
-        
+
         if (!student) {
-          errors.push({ 
-            studentId, 
-            error: "Student not found or doesn't take this subject" 
+          errors.push({
+            studentId,
+            error: "Student not found or doesn't take this subject"
           });
           continue;
         }
-        
-        // Check for existing result
+
+        // Check if result exists
         let result = await Result.findOne({
           student: student._id,
           subject: subjectId,
           term,
           session
         });
-        
+
         if (result) {
-          // Update
           result.firstCA = firstCA;
           result.secondCA = secondCA;
           result.exam = exam;
@@ -516,8 +539,8 @@ export const bulkUploadResults = async (req, res) => {
           result.lastEditedBy = teacherId;
           result.lastEditedAt = new Date();
           await result.save();
+
         } else {
-          // Create
           result = await Result.create({
             student: student._id,
             subject: subjectId,
@@ -530,22 +553,22 @@ export const bulkUploadResults = async (req, res) => {
             uploadedBy: teacherId
           });
         }
-        
+
         uploadedResults.push({
           studentId,
           studentName: student.name,
           total: result.total,
           grade: result.grade
         });
-        
-      } catch (error) {
-        errors.push({ 
-          studentId: item.studentId, 
-          error: error.message 
+
+      } catch (err) {
+        errors.push({
+          studentId: item.studentId,
+          error: err.message
         });
       }
     }
-    
+
     res.json({
       success: true,
       message: `Uploaded ${uploadedResults.length} results`,
@@ -554,11 +577,184 @@ export const bulkUploadResults = async (req, res) => {
       uploadedResults,
       errors
     });
-    
+
   } catch (error) {
-    res.status(500).json({ 
-      message: "Error in bulk upload", 
-      error: error.message 
+    res.status(500).json({
+      message: "Error in bulk upload",
+      error: error.message
+    });
+  }
+};
+
+
+// ============================================================
+// 7. SUBMIT RESULTS FOR APPROVAL (Teacher)
+// ============================================================
+export const submitForApproval = async (req, res) => {
+  try {
+    const { resultIds } = req.body;
+
+    if (!Array.isArray(resultIds) || resultIds.length === 0) {
+      return res.status(400).json({ message: "resultIds array is required" });
+    }
+
+    const results = await Result.updateMany(
+      { _id: { $in: resultIds }, uploadedBy: req.user._id },
+      { status: "pending_approval" }
+    );
+
+    if (results.modifiedCount === 0) {
+      return res.status(404).json({
+        message: "No results found or already submitted"
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `${results.modifiedCount} results submitted for approval`,
+      count: results.modifiedCount
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      message: "Error submitting results",
+      error: error.message
+    });
+  }
+};
+
+
+// ============================================================
+// 8. GET ALL PENDING RESULTS (Admin)
+// ============================================================
+export const getPendingResults = async (req, res) => {
+  try {
+    const { term, session } = req.query;
+
+    const query = { status: "pending_approval" };
+    if (term) query.term = term;
+    if (session) query.session = session;
+
+    const results = await Result.find(query)
+      .populate("student", "name studentId classLevel branch")
+      .populate("subject", "name code")
+      .populate("uploadedBy", "name email")
+      .sort({ createdAt: -1 });
+
+    const grouped = results.reduce((acc, result) => {
+      const key = `${result.subject._id}-${result.uploadedBy._id}`;
+
+      if (!acc[key]) {
+        acc[key] = {
+          subject: result.subject,
+          teacher: result.uploadedBy,
+          class: result.student.classLevel,
+          term: result.term,
+          session: result.session,
+          results: [],
+          count: 0
+        };
+      }
+
+      acc[key].results.push(result);
+      acc[key].count++;
+
+      return acc;
+    }, {});
+
+    res.json({
+      success: true,
+      totalPending: results.length,
+      groupedResults: Object.values(grouped)
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      message: "Error fetching pending results",
+      error: error.message
+    });
+  }
+};
+
+
+// ============================================================
+// 9. APPROVE RESULTS (Admin)
+// ============================================================
+export const approveResults = async (req, res) => {
+  try {
+    const { resultIds } = req.body;
+
+    if (!Array.isArray(resultIds) || resultIds.length === 0) {
+      return res.status(400).json({ message: "resultIds array is required" });
+    }
+
+    const results = await Result.updateMany(
+      { _id: { $in: resultIds } },
+      {
+        status: "approved",
+        approvedBy: req.user._id,
+        approvedAt: new Date()
+      }
+    );
+
+    res.json({
+      success: true,
+      message: `${results.modifiedCount} results approved successfully`,
+      count: results.modifiedCount
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      message: "Error approving results",
+      error: error.message
+    });
+  }
+};
+
+
+// ============================================================
+// 10. REJECT RESULTS (Admin)
+// ============================================================
+export const rejectResults = async (req, res) => {
+  try {
+    const { resultIds, reason } = req.body;
+
+    if (!Array.isArray(resultIds) || resultIds.length === 0)
+      return res.status(400).json({ message: "resultIds array is required" });
+
+    if (!reason)
+      return res.status(400).json({ message: "Rejection reason is required" });
+
+    const results = await Result.find({ _id: { $in: resultIds } })
+      .populate("uploadedBy", "name email")
+      .populate("subject", "name");
+
+    await Result.updateMany(
+      { _id: { $in: resultIds } },
+      { status: "rejected", rejectionReason: reason }
+    );
+
+    if (results.length > 0) {
+      const teacher = results[0].uploadedBy;
+      const subject = results[0].subject;
+
+      await sendRejectionEmail(teacher.email, teacher.name, {
+        subject: subject.name,
+        class: "Various",
+        reason
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `${results.length} results rejected and teacher notified`,
+      count: results.length
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      message: "Error rejecting results",
+      error: error.message
     });
   }
 };
