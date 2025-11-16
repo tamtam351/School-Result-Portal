@@ -1,5 +1,6 @@
+// corrected createAdmin.js
+// Place this in the same location as your existing admin creation script
 import mongoose from 'mongoose';
-import bcrypt from 'bcryptjs';
 import User from '../models/userModel.js';
 import dotenv from 'dotenv';
 
@@ -20,13 +21,11 @@ const createAdmin = async () => {
       process.exit(0);
     }
     
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash('admin123', salt);
-    
+    // Pass plaintext password here and let the model pre-save hook hash it once
     const admin = await User.create({
       name: 'System Administrator',
       email: 'admin@delaurel.com',
-      password: hashedPassword,
+      password: 'admin123', // plaintext -> model will hash once
       role: 'admin'
     });
     
