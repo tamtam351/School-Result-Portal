@@ -1,3 +1,4 @@
+// controllers/specializationController.js
 import TeacherSpecialization from "../models/teacherSpecializationModel.js";
 import User from "../models/userModel.js";
 
@@ -7,16 +8,10 @@ export const createSpecialization = async (req, res) => {
     const { name, category, description } = req.body;
 
     if (!name || !category) {
-      return res.status(400).json({ 
-        message: "name and category are required" 
-      });
+      return res.status(400).json({ message: "name and category are required" });
     }
 
-    const specialization = await TeacherSpecialization.create({
-      name,
-      category,
-      description
-    });
+    const specialization = await TeacherSpecialization.create({ name, category, description });
 
     res.status(201).json({
       success: true,
@@ -26,14 +21,9 @@ export const createSpecialization = async (req, res) => {
 
   } catch (error) {
     if (error.code === 11000) {
-      return res.status(400).json({ 
-        message: "Specialization already exists" 
-      });
+      return res.status(400).json({ message: "Specialization already exists" });
     }
-    res.status(500).json({ 
-      message: "Error creating specialization", 
-      error: error.message 
-    });
+    res.status(500).json({ message: "Error creating specialization", error: error.message });
   }
 };
 
@@ -47,29 +37,32 @@ export const getAllSpecializations = async (req, res) => {
     if (isActive !== undefined) query.isActive = isActive === "true";
 
     const specializations = await TeacherSpecialization.find(query)
-      .sort({ category: 1, name: 1 });
+      .sort({ category: 1, name: 1 })
+      .lean(); // ✅ use .lean() for plain JS objects — faster and read-only safe
 
-    // Get teacher counts
-    for (let spec of specializations) {
-      const count = await User.countDocuments({
-        role: "teacher",
-        teacherSpecialization: spec._id
-      });
-      spec.teacherCount = count;
-      await spec.save();
+    // ✅ FIX: Count teachers in a SINGLE aggregated query instead of N individual
+    // queries + saves inside a loop. The old code did spec.save() inside a GET
+    // handler — mutating data on every read, causing unnecessary DB writes and
+    // potential race conditions.
+    const teacherCounts = await User.aggregate([
+      { $match: { role: "teacher", teacherSpecialization: { $exists: true, $ne: null } } },
+      { $group: { _id: "$teacherSpecialization", count: { $sum: 1 } } }
+    ]);
+
+    const countMap = {};
+    for (const entry of teacherCounts) {
+      countMap[entry._id.toString()] = entry.count;
     }
 
-    res.json({
-      success: true,
-      count: specializations.length,
-      specializations
-    });
+    const result = specializations.map(spec => ({
+      ...spec,
+      teacherCount: countMap[spec._id.toString()] || 0
+    }));
+
+    res.json({ success: true, count: result.length, specializations: result });
 
   } catch (error) {
-    res.status(500).json({ 
-      message: "Error fetching specializations", 
-      error: error.message 
-    });
+    res.status(500).json({ message: "Error fetching specializations", error: error.message });
   }
 };
 
@@ -91,17 +84,10 @@ export const updateSpecialization = async (req, res) => {
 
     await specialization.save();
 
-    res.json({
-      success: true,
-      message: "Specialization updated successfully",
-      specialization
-    });
+    res.json({ success: true, message: "Specialization updated successfully", specialization });
 
   } catch (error) {
-    res.status(500).json({ 
-      message: "Error updating specialization", 
-      error: error.message 
-    });
+    res.status(500).json({ message: "Error updating specialization", error: error.message });
   }
 };
 
@@ -110,15 +96,14 @@ export const deleteSpecialization = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Check if any teachers have this specialization
     const teachersWithSpec = await User.countDocuments({
       role: "teacher",
       teacherSpecialization: id
     });
 
     if (teachersWithSpec > 0) {
-      return res.status(400).json({ 
-        message: `Cannot delete: ${teachersWithSpec} teacher(s) have this specialization` 
+      return res.status(400).json({
+        message: `Cannot delete: ${teachersWithSpec} teacher(s) have this specialization`
       });
     }
 
@@ -127,15 +112,9 @@ export const deleteSpecialization = async (req, res) => {
       return res.status(404).json({ message: "Specialization not found" });
     }
 
-    res.json({
-      success: true,
-      message: "Specialization deleted successfully"
-    });
+    res.json({ success: true, message: "Specialization deleted successfully" });
 
   } catch (error) {
-    res.status(500).json({ 
-      message: "Error deleting specialization", 
-      error: error.message 
-    });
+    res.status(500).json({ message: "Error deleting specialization", error: error.message });
   }
 };

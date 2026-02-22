@@ -43,7 +43,6 @@ const teacherSpecializationSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-teacherSpecializationSchema.index({ name: 1 });
 teacherSpecializationSchema.index({ category: 1 });
 
 const TeacherSpecialization = mongoose.model("TeacherSpecialization", teacherSpecializationSchema);
